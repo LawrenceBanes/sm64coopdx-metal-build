@@ -89,15 +89,21 @@ static MTLSamplerAddressMode address_mode(uint32_t mode) {
     return MTLSamplerAddressModeRepeat;
 }
 
-static void update_sampler(int tile) {
-    if (tile < 0 || tile > 1 || !sDevice) return;
+static bool update_sampler(int tile) {
+    if (tile < 0 || tile > 1 || !sDevice) return false;
     MTLSamplerDescriptor *d = [[MTLSamplerDescriptor alloc] init];
     d.minFilter = sLinear[tile] ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
     d.magFilter = sLinear[tile] ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
     d.mipFilter = MTLSamplerMipFilterNotMipmapped;
     d.sAddressMode = address_mode(sWrapS[tile]);
     d.tAddressMode = address_mode(sWrapT[tile]);
-    sSamplers[tile] = [sDevice newSamplerStateWithDescriptor:d];
+    id<MTLSamplerState> sampler = [sDevice newSamplerStateWithDescriptor:d];
+    if (!sampler) {
+        fprintf(stderr, "Metal sampler creation failed for tile %d\n", tile);
+        return false;
+    }
+    sSamplers[tile] = sampler;
+    return true;
 }
 
 static MTLVertexFormat vertex_format(uint8_t size) {
@@ -240,19 +246,36 @@ static void metal_select_texture(int tile, uint32_t id) {
 static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
     int tile = sUploadTile;
     uint32_t textureId = sSelectedTexture[tile];
-    if (!rgba || width <= 0 || height <= 0 || width > 4096 || height > 4096 || textureId == 0 || textureId >= METAL_TEXTURE_LIMIT) return;
-    NSUInteger bytes = (NSUInteger)width * (NSUInteger)height * 4;
-    if (bytes > METAL_MAX_SINGLE_TEXTURE_BYTES) return;
+    if (textureId == 0 || textureId >= METAL_TEXTURE_LIMIT) return;
     NSUInteger oldBytes = sTextures[textureId] ? sTextures[textureId].width * sTextures[textureId].height * 4 : 0;
+    if (!rgba || width <= 0 || height <= 0 || width > 4096 || height > 4096) {
+        sTextures[textureId] = nil;
+        sTextureBytes -= oldBytes;
+        return;
+    }
+    NSUInteger bytes = (NSUInteger)width * (NSUInteger)height * 4;
+    if (bytes > METAL_MAX_SINGLE_TEXTURE_BYTES) {
+        sTextures[textureId] = nil;
+        sTextureBytes -= oldBytes;
+        return;
+    }
     if (sTextureBytes - oldBytes + bytes > METAL_MAX_TEXTURE_BYTES) {
         fprintf(stderr, "Metal texture memory budget exceeded\n");
+        /* This slot may have been recycled by DynOS after cache rollover. A
+         * failed replacement must not show the previous mod's texture. */
+        sTextures[textureId] = nil;
+        sTextureBytes -= oldBytes;
         return;
     }
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:(NSUInteger)width height:(NSUInteger)height mipmapped:NO];
     d.usage = MTLTextureUsageShaderRead;
     d.storageMode = MTLStorageModeShared;
     id<MTLTexture> uploadedTexture = [sDevice newTextureWithDescriptor:d];
-    if (!uploadedTexture) return;
+    if (!uploadedTexture) {
+        sTextures[textureId] = nil;
+        sTextureBytes -= oldBytes;
+        return;
+    }
     [uploadedTexture replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:rgba bytesPerRow:(NSUInteger)width * 4];
     sTextures[textureId] = uploadedTexture;
     sTextureBytes = sTextureBytes - oldBytes + bytes;
@@ -260,7 +283,12 @@ static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
 static void metal_set_sampler(int tile, bool linear, uint32_t cms, uint32_t cmt) {
     if (tile < 0 || tile > 1) return;
     if (sSamplers[tile] && sLinear[tile] == linear && sWrapS[tile] == cms && sWrapT[tile] == cmt) return;
-    sLinear[tile] = linear; sWrapS[tile] = cms; sWrapT[tile] = cmt; update_sampler(tile);
+    bool oldLinear = sLinear[tile];
+    uint32_t oldWrapS = sWrapS[tile], oldWrapT = sWrapT[tile];
+    sLinear[tile] = linear; sWrapS[tile] = cms; sWrapT[tile] = cmt;
+    if (!update_sampler(tile)) {
+        sLinear[tile] = oldLinear; sWrapS[tile] = oldWrapS; sWrapT[tile] = oldWrapT;
+    }
 }
 static void metal_set_depth_test(bool enabled) { sDepthEnabled = enabled; }
 static void metal_set_depth_mask(bool enabled) { sDepthWrite = enabled; }
@@ -354,7 +382,7 @@ static void metal_init(void) {
         sDepthStates[d][w] = [sDevice newDepthStencilStateWithDescriptor:desc];
     }
     for (int t = 0; t < 2; ++t) { sWrapS[t] = G_TX_WRAP; sWrapT[t] = G_TX_WRAP; update_sampler(t); }
-    sReady = sWhiteTexture && sDepthStates[0][0] && sDepthStates[1][1];
+    sReady = sWhiteTexture && sDepthStates[0][0] && sDepthStates[1][1] && sSamplers[0] && sSamplers[1];
 }
 
 static void metal_resize(void) { sWidth = 0; sHeight = 0; }
