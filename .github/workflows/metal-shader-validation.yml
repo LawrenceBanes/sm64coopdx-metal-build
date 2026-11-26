@@ -32,6 +32,10 @@ jobs:
         run: scripts/compile-ios-metal-adapter.sh
       - name: Generate representative MSL permutations from the shader adapter
         run: scripts/emit-msl-fixtures.sh build/generated-msl
+      - name: Test SDL Metal view lifecycle bridge
+        run: |
+          scripts/run_gfx_sdl_metal_layer_test.sh
+          SANITIZE=1 CC=clang scripts/run_gfx_sdl_metal_layer_test.sh
       - name: Compile fixture and generated MSL for iPhoneOS
         run: |
           set -euo pipefail
@@ -77,9 +81,9 @@ jobs:
             build/CoopDXMetalHarness.dylib
             build/ios-arm64-adapter/*.o
             build/libSDL2-ios-arm64.a
-            build/SDL2-LICENSE.txt
             build/air/*.air
             build/generated-msl/*.metal
+            build/SDL2-LICENSE.txt
             build/build-info.json
             build/SHA256SUMS.txt
           if-no-files-found: error

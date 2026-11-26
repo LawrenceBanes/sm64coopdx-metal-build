@@ -41,7 +41,7 @@ xcrun --sdk iphoneos clang++ --target=arm64-apple-ios15.0 -isysroot "$SDKROOT" \
     -o "$BUILD_DIR/CoopDXMetalHarness.dylib"
 
 file "$BUILD_DIR"/*.o "$BUILD_DIR/CoopDXMetalHarness.dylib"
-lipo -verify_arch arm64 "$BUILD_DIR/CoopDXMetalHarness.dylib"
+lipo "$BUILD_DIR/CoopDXMetalHarness.dylib" -verify_arch arm64
 xcrun otool -hv -l "$BUILD_DIR/CoopDXMetalHarness.dylib"
 xcrun otool -L "$BUILD_DIR/CoopDXMetalHarness.dylib"
 xcrun nm -arch arm64 -gU "$BUILD_DIR/CoopDXMetalHarness.dylib" | grep '_gfx_metal_coopdx_api'

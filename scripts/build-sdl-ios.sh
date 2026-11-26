@@ -29,7 +29,7 @@ cmake --build "$BUILD" --config Release --parallel
 LIBRARY="$BUILD/libSDL2.a"
 test -f "$LIBRARY"
 file "$LIBRARY"
-xcrun lipo -verify_arch arm64 "$LIBRARY"
+xcrun lipo "$LIBRARY" -verify_arch arm64
 xcrun nm -g "$LIBRARY" > "$BUILD_ROOT/sdl-symbols.txt"
 grep 'SDL_Metal_CreateView' "$BUILD_ROOT/sdl-symbols.txt"
 grep 'SDL_Metal_GetLayer' "$BUILD_ROOT/sdl-symbols.txt"

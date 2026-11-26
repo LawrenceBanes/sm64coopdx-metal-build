@@ -1,0 +1,101 @@
+name: Full private-source iOS build and private release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require scoped private repository credential
+        env:
+          PRIVATE_INTEGRATION_TOKEN: ${{ secrets.PRIVATE_INTEGRATION_TOKEN }}
+        run: test -n "$PRIVATE_INTEGRATION_TOKEN"
+      - name: Checkout private patch overlay
+        uses: actions/checkout@v4
+        with:
+          repository: LawrenceBanes/sm64coopdx-metal-integration
+          ref: mission-03-04-metal-first-light-parity
+          path: private-overlay
+          token: ${{ secrets.PRIVATE_INTEGRATION_TOKEN }}
+          persist-credentials: false
+      - name: Verify Apple toolchain and public ARM runner
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --find metal
+      - name: Install reproducible iOS build tools
+        run: |
+          brew install cmake make mingw-w64 gcc pkg-config glfw glew sdl2 coreutils
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Materialize the pinned game source and private integration
+        run: private-overlay/materialize.sh "$RUNNER_TEMP/coopdx"
+      - name: Run focused renderer tests and build the complete app
+        working-directory: ${{ runner.temp }}/coopdx
+        run: |
+          set -euo pipefail
+          tests/run_gfx_metal_coopdx_shader_test.sh
+          SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh
+          ./build_ios.sh all
+      - name: Validate IPA and write private-release manifest
+        id: validate
+        working-directory: ${{ runner.temp }}/coopdx
+        run: |
+          set -euo pipefail
+          IPA="$RUNNER_TEMP/coopdx/sm64coopdx.ipa"
+          test -s "$IPA"
+          unzip -t "$IPA"
+          APP=$(unzip -Z1 "$IPA" | awk -F/ '$1=="Payload" && $2 ~ /\.app$/ {print $1 "/" $2; exit}')
+          test -n "$APP"
+          mkdir -p "$RUNNER_TEMP/ipa-check"
+          ditto -x -k "$IPA" "$RUNNER_TEMP/ipa-check"
+          APP_PATH="$RUNNER_TEMP/ipa-check/$APP"
+          test -d "$APP_PATH"
+          plutil -lint "$APP_PATH/Info.plist"
+          EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")
+          test -s "$APP_PATH/$EXECUTABLE"
+          lipo -verify_arch arm64 "$APP_PATH/$EXECUTABLE"
+          otool -hv -l "$APP_PATH/$EXECUTABLE" > "$RUNNER_TEMP/macho-load-commands.txt"
+          otool -L "$APP_PATH/$EXECUTABLE" > "$RUNNER_TEMP/macho-dependencies.txt"
+          test ! -e "$APP_PATH/embedded.mobileprovision"
+          shasum -a 256 "$IPA" | awk '{print $1}' > "$RUNNER_TEMP/ipa.sha256"
+          IPA_SIZE=$(stat -f %z "$IPA")
+          EXEC_SHA=$(shasum -a 256 "$APP_PATH/$EXECUTABLE" | awk '{print $1}')
+          TREE=$(git -C "$RUNNER_TEMP/coopdx" rev-parse 'HEAD^{tree}')
+          OVERLAY_COMMIT=$(git -C private-overlay rev-parse HEAD)
+          cat > "$RUNNER_TEMP/BUILD-MANIFEST.md" <<EOF
+          # SM64CoopDX iOS Metal build manifest
+
+          - Source overlay commit: $OVERLAY_COMMIT
+          - Materialized source tree: $TREE
+          - Public workflow commit: $GITHUB_SHA
+          - GitHub Actions run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          - Xcode: $(xcodebuild -version | tr '\n' ' ')
+          - iPhoneOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)
+          - Executable SHA-256: $EXEC_SHA
+          - IPA size: $IPA_SIZE bytes
+          - IPA SHA-256: $(cat "$RUNNER_TEMP/ipa.sha256")
+
+          The IPA is unsigned for import into LiveContainer. Metal remains explicitly selectable; OpenGL ES remains the default. No ROM or proprietary game data was added by CI. Launch and rendering still require physical-device validation.
+          EOF
+          cp "$IPA" "$RUNNER_TEMP/SM64CoopDX-Metal-LiveContainer-FirstLight.ipa"
+          echo "ipa=$RUNNER_TEMP/SM64CoopDX-Metal-LiveContainer-FirstLight.ipa" >> "$GITHUB_OUTPUT"
+      - name: Publish IPA only to the existing private repository release
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_INTEGRATION_TOKEN }}
+          IPA_PATH: ${{ steps.validate.outputs.ipa }}
+        run: |
+          set -euo pipefail
+          gh release create sm64coopdx-metal-first-light-v0.1.0 \
+            "$IPA_PATH" "$RUNNER_TEMP/ipa.sha256" "$RUNNER_TEMP/BUILD-MANIFEST.md" \
+            --repo LawrenceBanes/sm64coopdx-metal-integration \
+            --title "SM64CoopDX Metal First Light v0.1.0" \
+            --notes-file "$RUNNER_TEMP/BUILD-MANIFEST.md"
