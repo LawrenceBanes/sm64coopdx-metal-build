@@ -20,9 +20,14 @@ class BackendContractTests(unittest.TestCase):
 
     def test_texture_replacement_rebind_and_upload_are_runtime_state(self):
         self.assertIn("sSelectedTexture[tile] =", BACKEND)
-        self.assertIn("id<MTLTexture> texture = [sDevice newTextureWithDescriptor:d]", BACKEND)
-        self.assertIn("sTextures[id] = texture", BACKEND)
+        self.assertIn("id<MTLTexture> uploadedTexture = [sDevice newTextureWithDescriptor:d]", BACKEND)
+        self.assertIn("sTextures[textureId] = uploadedTexture", BACKEND)
         self.assertIn("setFragmentTexture:t atIndex:tile", BACKEND)
+
+    def test_arc_owned_pipeline_objects_are_released_without_raw_memset(self):
+        self.assertIn("sPrograms[i].pipeline[0] = nil", BACKEND)
+        self.assertIn("sPrograms[i].pipeline[1] = nil", BACKEND)
+        self.assertNotIn("memset(sPrograms", BACKEND)
 
     def test_dynos_material_paths_share_texture_and_combiner_backend(self):
         self.assertIn("gfx_metal_coopdx_build_shader(cc, source", BACKEND)

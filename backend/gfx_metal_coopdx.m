@@ -239,11 +239,11 @@ static void metal_select_texture(int tile, uint32_t id) {
 }
 static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
     int tile = sUploadTile;
-    uint32_t id = sSelectedTexture[tile];
-    if (!rgba || width <= 0 || height <= 0 || width > 4096 || height > 4096 || id == 0 || id >= METAL_TEXTURE_LIMIT) return;
+    uint32_t textureId = sSelectedTexture[tile];
+    if (!rgba || width <= 0 || height <= 0 || width > 4096 || height > 4096 || textureId == 0 || textureId >= METAL_TEXTURE_LIMIT) return;
     NSUInteger bytes = (NSUInteger)width * (NSUInteger)height * 4;
     if (bytes > METAL_MAX_SINGLE_TEXTURE_BYTES) return;
-    NSUInteger oldBytes = sTextures[id] ? sTextures[id].width * sTextures[id].height * 4 : 0;
+    NSUInteger oldBytes = sTextures[textureId] ? sTextures[textureId].width * sTextures[textureId].height * 4 : 0;
     if (sTextureBytes - oldBytes + bytes > METAL_MAX_TEXTURE_BYTES) {
         fprintf(stderr, "Metal texture memory budget exceeded\n");
         return;
@@ -254,7 +254,7 @@ static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
     id<MTLTexture> uploadedTexture = [sDevice newTextureWithDescriptor:d];
     if (!uploadedTexture) return;
     [uploadedTexture replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:rgba bytesPerRow:(NSUInteger)width * 4];
-    sTextures[id] = uploadedTexture;
+    sTextures[textureId] = uploadedTexture;
     sTextureBytes = sTextureBytes - oldBytes + bytes;
 }
 static void metal_set_sampler(int tile, bool linear, uint32_t cms, uint32_t cmt) {
@@ -440,7 +440,13 @@ static const char *metal_name(void) { return "Metal (CoopDX)"; }
 static void metal_shutdown(void) {
     sReady = false;
     sEncoder = nil; sCommandBuffer = nil; sDrawable = nil;
-    sProgram = NULL; sProgramCount = 0;
+    sProgram = NULL;
+    for (NSUInteger i = 0; i < sProgramCount; ++i) {
+        sPrograms[i].pipeline[0] = nil;
+        sPrograms[i].pipeline[1] = nil;
+        sPrograms[i].info = (struct GfxMetalCoopDXShaderInfo){0};
+    }
+    sProgramCount = 0;
     for (int i = 0; i < METAL_FRAMES_IN_FLIGHT; ++i) {
         sVertexFrames[i].buffer = nil;
         sVertexFrames[i].depth = nil;
@@ -453,7 +459,6 @@ static void metal_shutdown(void) {
     sTextureBytes = 0;
     sNextTexture = 1; sUploadTile = 0;
     memset(sSelectedTexture, 0, sizeof(sSelectedTexture));
-    memset(sPrograms, 0, sizeof(sPrograms));
     for (NSUInteger i = 0; i < METAL_TEXTURE_LIMIT; ++i) sTextures[i] = nil;
     sDepthStates[0][0] = nil; sDepthStates[0][1] = nil;
     sDepthStates[1][0] = nil; sDepthStates[1][1] = nil;
