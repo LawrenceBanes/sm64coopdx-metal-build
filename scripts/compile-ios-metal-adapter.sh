@@ -36,7 +36,7 @@ xcrun --sdk iphoneos clang++ --target=arm64-apple-ios15.0 -isysroot "$SDKROOT" \
     "$BUILD_DIR/gfx_metal_coopdx.o" \
     "$SDL_LIBRARY" \
     -framework Foundation -framework Metal -framework QuartzCore \
-    -framework UIKit -framework CoreGraphics \
+    -framework UIKit -framework CoreGraphics -framework AVFAudio -framework OpenGLES \
     -Wl,-undefined,error -Wl,-install_name,@rpath/CoopDXMetalHarness.dylib \
     -o "$BUILD_DIR/CoopDXMetalHarness.dylib"
 
