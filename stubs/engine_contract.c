@@ -1,5 +1,6 @@
 #include "gfx_pc.h"
 #include "gfx_sdl.h"
+#include "gfx_sdl_metal_layer.h"
 #include "pc/configfile.h"
 
 Color gVertexColor = { 255, 255, 255, 255 };
