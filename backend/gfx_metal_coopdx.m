@@ -259,6 +259,7 @@ static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
 }
 static void metal_set_sampler(int tile, bool linear, uint32_t cms, uint32_t cmt) {
     if (tile < 0 || tile > 1) return;
+    if (sSamplers[tile] && sLinear[tile] == linear && sWrapS[tile] == cms && sWrapT[tile] == cmt) return;
     sLinear[tile] = linear; sWrapS[tile] = cms; sWrapT[tile] = cmt; update_sampler(tile);
 }
 static void metal_set_depth_test(bool enabled) { sDepthEnabled = enabled; }
@@ -328,6 +329,9 @@ static void metal_draw_triangles(float *vertices, size_t floatCount, size_t tria
 static void metal_init(void) {
     sReady = false;
     sPipelineError = false;
+    /* gfx_pc's RenderingState begins zeroed and persists across frames. Keep
+     * these mirrored values aligned with that initial cache state. */
+    sAlpha = false; sDepthEnabled = false; sDepthWrite = false; sDecal = false;
     sFrameSemaphore = dispatch_semaphore_create(METAL_FRAMES_IN_FLIGHT);
     if (!sFrameSemaphore) { fprintf(stderr, "Metal frame semaphore creation failed\n"); return; }
     for (int i = 0; i < METAL_FRAMES_IN_FLIGHT; ++i) sVertexFrames[i].growthTarget = 4096;
@@ -418,7 +422,11 @@ static void metal_start_frame(void) {
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
     pass.depthAttachment.clearDepth = 1.0;
     sEncoder = [sCommandBuffer renderCommandEncoderWithDescriptor:pass];
-    sAlpha = false; sDepthEnabled = true; sDepthWrite = true; sDecal = false; sScissorEmpty = false;
+    /* The renderer interface caches these values across frames. Do not reset
+     * them here: gfx_pc may correctly skip a setter because the logical state
+     * matches the previous frame. Draw submission reapplies depth/decal state
+     * to each newly-created encoder. */
+    sScissorEmpty = false;
 }
 static void metal_end_frame(void) {
     if (sEncoder) { [sEncoder endEncoding]; sEncoder = nil; }
