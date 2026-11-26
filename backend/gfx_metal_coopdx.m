@@ -201,7 +201,9 @@ static struct ShaderProgram *metal_create_shader(struct ColorCombiner *cc) {
     struct GfxMetalCoopDXShaderKey key;
     if (!gfx_metal_coopdx_shader_key(cc, &key)) return NULL;
     p = &sPrograms[sProgramCount];
-    memset(p, 0, sizeof(*p));
+    p->info = (struct GfxMetalCoopDXShaderInfo){0};
+    p->pipeline[0] = nil;
+    p->pipeline[1] = nil;
     p->key = key;
     p->pipeline[0] = make_pipeline(cc, p, false);
     p->pipeline[1] = make_pipeline(cc, p, true);
@@ -249,10 +251,10 @@ static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:(NSUInteger)width height:(NSUInteger)height mipmapped:NO];
     d.usage = MTLTextureUsageShaderRead;
     d.storageMode = MTLStorageModeShared;
-    id<MTLTexture> texture = [sDevice newTextureWithDescriptor:d];
-    if (!texture) return;
-    [texture replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:rgba bytesPerRow:(NSUInteger)width * 4];
-    sTextures[id] = texture;
+    id<MTLTexture> uploadedTexture = [sDevice newTextureWithDescriptor:d];
+    if (!uploadedTexture) return;
+    [uploadedTexture replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:rgba bytesPerRow:(NSUInteger)width * 4];
+    sTextures[id] = uploadedTexture;
     sTextureBytes = sTextureBytes - oldBytes + bytes;
 }
 static void metal_set_sampler(int tile, bool linear, uint32_t cms, uint32_t cmt) {
