@@ -78,7 +78,7 @@ jobs:
         with:
           name: iphoneos-metal-components-${{ github.sha }}
           path: |
-            build/CoopDXMetalHarness.dylib
+            build/ios-arm64-adapter/CoopDXMetalHarness.dylib
             build/ios-arm64-adapter/*.o
             build/libSDL2-ios-arm64.a
             build/air/*.air
