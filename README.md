@@ -2,7 +2,7 @@
 
 This public repository contains independently authored Metal adapter source, minimal mock engine interface declarations, generated Metal Shading Language (MSL) fixtures, and a macOS validation workflow. It does not contain SM64CoopDX engine implementation, game assets, ROM data, or a compiled application.
 
-The fixtures exercise representative renderer adapter output: textureless, texture tile 0, texture tile 1, and a two-cycle alpha/fog/light-map/world-flag path. CI compiles the authored Objective-C Metal backend and its C shader generator against Apple's iPhoneOS SDK using local mock declarations for CoopDX interfaces, then compiles the MSL fixtures. This catches Apple compiler and ARM64 object-generation issues in those components. Mock-interface compilation does not prove ABI compatibility with the full engine, app linking, rendering, or device output.
+The fixtures exercise representative renderer adapter output: textureless, texture tile 0, texture tile 1, and a two-cycle alpha/fog/light-map/world-flag path. CI compiles the authored Objective-C Metal backend and its C shader generator against Apple's iPhoneOS SDK using local mock declarations for CoopDX interfaces, then compiles the MSL fixtures. It also cross-compiles the independently authored, portable touch hit-testing/axis math to iPhoneOS ARM64 and runs its hit-priority, multitouch-ownership model, and axis-boundary tests on the host (including ASan/UBSan). This catches Apple compiler and ARM64 object-generation issues in those components. Mock-interface and portable-component validation do not prove ABI compatibility with the full engine, app linking, UIKit event delivery, rendering, or device output.
 
 ## Source and rights boundary
 

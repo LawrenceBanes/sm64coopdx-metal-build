@@ -36,6 +36,15 @@ jobs:
         run: |
           scripts/run_gfx_sdl_metal_layer_test.sh
           SANITIZE=1 CC=clang scripts/run_gfx_sdl_metal_layer_test.sh
+      - name: Compile portable touch-control math for iPhoneOS and test it on host
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios-arm64-components
+          xcrun --sdk iphoneos clang -target arm64-apple-ios15.0 -std=c11 -Wall -Wextra -Werror \
+            -c backend/touchscreen_controls_math.c \
+            -o build/ios-arm64-components/touchscreen_controls_math.o
+          scripts/run_touchscreen_controls_math_test.sh
+          SANITIZE=1 CC=clang scripts/run_touchscreen_controls_math_test.sh
       - name: Compile fixture and generated MSL for iPhoneOS
         run: |
           set -euo pipefail
@@ -80,6 +89,7 @@ jobs:
           path: |
             build/ios-arm64-adapter/CoopDXMetalHarness.dylib
             build/ios-arm64-adapter/*.o
+            build/ios-arm64-components/*.o
             build/libSDL2-ios-arm64.a
             build/air/*.air
             build/generated-msl/*.metal
