@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  compile-msl:
+  build-metal-components:
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -22,21 +22,65 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
           xcrun --sdk iphoneos --find metal
-      - name: Compile generated MSL fixtures for iPhoneOS
+          xcrun --sdk iphoneos --find clang
+      - name: Build pinned upstream SDL2 for iPhoneOS Metal
+        run: scripts/build-sdl-ios.sh
+      - name: Compile authored Objective-C Metal backend and SDL Metal adapter
+        env:
+          SDL2_SOURCE_DIR: ${{ runner.temp }}/sm64coopdx-sdl-ios/SDL2-2.32.10
+          SDL2_LIBRARY: ${{ runner.temp }}/sm64coopdx-sdl-ios/build/libSDL2.a
+        run: scripts/compile-ios-metal-adapter.sh
+      - name: Generate representative MSL permutations from the shader adapter
+        run: scripts/emit-msl-fixtures.sh build/generated-msl
+      - name: Compile fixture and generated MSL for iPhoneOS
         run: |
           set -euo pipefail
-          mkdir -p build
+          mkdir -p build/air
           for source in shaders/*.metal; do
             name="$(basename "$source" .metal)"
-            xcrun --sdk iphoneos metal -c "$source" -o "build/$name.air"
+            xcrun --sdk iphoneos metal -c "$source" -o "build/air/original-$name.air"
           done
-          shasum -a 256 shaders/*.metal build/*.air | tee build/SHA256SUMS.txt
-      - name: Upload compiler evidence
+          for source in build/generated-msl/*.metal; do
+            name="$(basename "$source" .metal)"
+            xcrun --sdk iphoneos metal -c "$source" -o "build/air/$name.air"
+          done
+          python3 -m unittest discover -s tools -v
+      - name: Write build manifest and checksums
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, platform, subprocess
+          from pathlib import Path
+          root = Path('build')
+          files = sorted(p for p in root.rglob('*') if p.is_file() and p.name != 'build-info.json')
+          metadata = {
+              'schema': 2,
+              'source_commit': os.environ['GITHUB_SHA'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'target': 'arm64-apple-ios15.0',
+              'platform': 'iPhoneOS',
+              'runner_architecture': platform.machine(),
+              'xcode': subprocess.check_output(['xcodebuild','-version'], text=True).strip(),
+              'iphoneos_sdk': subprocess.check_output(['xcrun','--sdk','iphoneos','--show-sdk-version'], text=True).strip(),
+              'outputs': {str(p.relative_to(root)): {'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in files},
+          }
+          (root/'build-info.json').write_text(json.dumps(metadata, indent=2, sort_keys=True)+'\n')
+          sums = ''.join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}\n" for p in files+[root/'build-info.json'])
+          (root/'SHA256SUMS.txt').write_text(sums)
+          PY
+          (cd build && shasum -a 256 -c SHA256SUMS.txt)
+      - name: Publish redistributable Apple build components only
         uses: actions/upload-artifact@v4
         with:
-          name: iphoneos-metal-shader-fixtures-${{ github.sha }}
+          name: iphoneos-metal-components-${{ github.sha }}
           path: |
-            build/*.air
+            build/CoopDXMetalHarness.dylib
+            build/ios-arm64-adapter/*.o
+            build/libSDL2-ios-arm64.a
+            build/SDL2-LICENSE.txt
+            build/air/*.air
+            build/generated-msl/*.metal
+            build/build-info.json
             build/SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
