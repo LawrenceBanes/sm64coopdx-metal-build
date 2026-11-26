@@ -1,0 +1,42 @@
+name: iPhoneOS Metal shader validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-msl:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify runner and Apple toolchain
+        run: |
+          test "$(uname -m)" = "arm64"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --find metal
+      - name: Compile generated MSL fixtures for iPhoneOS
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for source in shaders/*.metal; do
+            name="$(basename "$source" .metal)"
+            xcrun --sdk iphoneos metal -c "$source" -o "build/$name.air"
+          done
+          shasum -a 256 shaders/*.metal build/*.air | tee build/SHA256SUMS.txt
+      - name: Upload compiler evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: iphoneos-metal-shader-fixtures-${{ github.sha }}
+          path: |
+            build/*.air
+            build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
