@@ -2,6 +2,7 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <dispatch/dispatch.h>
+#import <simd/simd.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_metal.h>
 #include <PR/gbi.h>
@@ -82,10 +83,10 @@ static id<MTLTexture> make_white_texture(void) {
     return t;
 }
 
-static MTLAddressMode address_mode(uint32_t mode) {
-    if (mode & G_TX_CLAMP) return MTLAddressModeClampToEdge;
-    if (mode & G_TX_MIRROR) return MTLAddressModeMirrorRepeat;
-    return MTLAddressModeRepeat;
+static MTLSamplerAddressMode address_mode(uint32_t mode) {
+    if (mode & G_TX_CLAMP) return MTLSamplerAddressModeClampToEdge;
+    if (mode & G_TX_MIRROR) return MTLSamplerAddressModeMirrorRepeat;
+    return MTLSamplerAddressModeRepeat;
 }
 
 static void update_sampler(int tile) {
@@ -274,7 +275,9 @@ static void metal_set_scissor(int x, int y, int w, int h) {
         return;
     }
     sScissorEmpty = false;
-    [sEncoder setScissorRect:MTLScissorRectMake(rect.x, rect.y, rect.width, rect.height)];
+    MTLScissorRect metalRect = { (NSUInteger)rect.x, (NSUInteger)rect.y,
+                                 (NSUInteger)rect.width, (NSUInteger)rect.height };
+    [sEncoder setScissorRect:metalRect];
 }
 static void metal_set_alpha(bool enabled) { sAlpha = enabled; }
 
@@ -370,7 +373,8 @@ static void metal_start_frame(void) {
         }
     }
     gfx_metal_coopdx_vertex_stream_reset(&frame->stream);
-    sDrawable = [(CAMetalLayer *)gfx_sdl_get_metal_layer() nextDrawable];
+    CAMetalLayer *layer = (__bridge CAMetalLayer *)gfx_sdl_get_metal_layer();
+    sDrawable = [layer nextDrawable];
     if (!sDrawable) {
         dispatch_semaphore_signal(sFrameSemaphore);
         sFramePermit = false;
